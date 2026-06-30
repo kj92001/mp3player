@@ -1,7 +1,7 @@
 import os
 from mutagen.mp3 import MP3
 from mutagen.id3 import ID3, APIC, TIT2, TPE1
-from PyQt6.QtGui import QPixmap, QImage
+from PySide6.QtGui import QPixmap, QImage
 
 def get_metadata(file_path):
     metadata = {"title": os.path.basename(file_path), "artist": "Unknown", "cover": None}

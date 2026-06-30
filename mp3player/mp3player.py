@@ -1,45 +1,26 @@
 import sys
 import os
-import json  # 설정 파일 파싱을 위해 추가
 
-# 1. Linux 환경 VLC 플러그인 경로 설정 (최상단 배치)
-if getattr(sys, 'frozen', False) or sys.platform.startswith('linux'):
-    os.environ['PYTHON_VLC_MODULE_PATH'] = '/usr/lib/x86_64-linux-gnu/vlc/plugins'
+if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+    if sys._MEIPASS not in sys.path:
+        sys.path.insert(0, sys._MEIPASS)
+    os.chdir(sys._MEIPASS)
 
-from PyQt6.QtWidgets import QMainWindow, QApplication, QListWidgetItem, QMessageBox, QFileDialog
-from PyQt6.QtCore import Qt
-from PyQt6.uic import loadUi
-
+from PySide6.QtWidgets import QMainWindow, QApplication, QListWidgetItem, QMessageBox, QFileDialog
+from PySide6.QtCore import Qt
+# from PySide6.QtUiTools import QUiLoader  #  PySide6 전용 UI 로더
+# from PySide6.QtCore import QFile  
 import config
 from meta_extractor import get_metadata
 from player_backend import PlayerBackend
+from mp3player_ui import Ui_MainWindow
 
-
-# 2. PyInstaller 임시 폴더 경로 추적 함수
-def resource_path(relative_path):
-    # player_config.json 파일만 ~/.local/share/my_player 절대 경로로 강제 지정
-    if relative_path == "player_config.json":
-        home_dir = os.path.expanduser("~")
-        config_dir = os.path.join(home_dir, ".local", "share", "my_player")
-        if not os.path.exists(config_dir):
-            os.makedirs(config_dir, exist_ok=True)
-        return os.path.join(config_dir, relative_path)
-    
-    # 이미지, 아이콘 등 다른 리소스는 기존 PyInstaller/실행폴더 경로 유지
-    try:
-        base_path = sys._MEIPASS
-    except Exception:
-        base_path = os.path.abspath(".")
-    return os.path.join(base_path, relative_path)
-
-class MP3PlayerApp(QMainWindow):
+class MP3PlayerApp(QMainWindow, Ui_MainWindow):
     def __init__(self):
         super().__init__()
         
-        # UI 파일 로드
-        ui_path = resource_path("mp3player.ui")
         try:
-            loadUi(ui_path, self)
+            self.setupUi(self)
         except Exception as e:
             print(f"❌ UI 파일 로드 실패: {e}")
             sys.exit(1)
@@ -57,7 +38,7 @@ class MP3PlayerApp(QMainWindow):
 
         # 시그널 연결
         self.btnPlay.clicked.connect(self.play_music)
-        self.btnStop.clicked.connect(self.pause_music)    
+        self.btnStop.clicked.connect(self.pause_music)    # 🛠️ 기존 정지 버튼을 일시정지 함수에 연결
         self.btnNext.clicked.connect(self.play_next)
         self.btnPrev.clicked.connect(self.play_prev)
         self.btnUp.clicked.connect(self.move_up)
@@ -87,7 +68,6 @@ class MP3PlayerApp(QMainWindow):
         self.verticalScrollBar.valueChanged.connect(self.listWidget.verticalScrollBar().setValue)
         self.listWidget.verticalScrollBar().rangeChanged.connect(self.handle_scrollbar_dynamic)
 
-        # ⭐ [수정] 프로그램 시작 시 저장된 재생 목록을 확실하게 로드합니다.
         self.load_saved_data()
 
     def play_music(self):
@@ -99,6 +79,7 @@ class MP3PlayerApp(QMainWindow):
             else:
                 self.backend.play()
 
+    # 🛠️ 기존 정지 대신 작동할 일시정지 함수
     def pause_music(self):
         """곡이 재생 중일 때 그 자리에 일시정지합니다."""
         if self.backend.player.is_playing():
@@ -145,8 +126,6 @@ class MP3PlayerApp(QMainWindow):
             item = QListWidgetItem(os.path.basename(path))
             item.setData(Qt.ItemDataRole.UserRole, path)
             self.listWidget.addItem(item)
-            # 곡이 추가될 때마다 세이브 파일에 자동 저장 유도
-            self.save_current_data()
 
     def dragEnterEvent(self, event):
         if event.mimeData().hasUrls():
@@ -167,7 +146,6 @@ class MP3PlayerApp(QMainWindow):
             if item:
                 new_paths.append(item.data(Qt.ItemDataRole.UserRole))
         self.playlist_paths = new_paths
-        self.save_current_data()
 
     def play_next(self):
         if self.playlist_paths:
@@ -190,7 +168,6 @@ class MP3PlayerApp(QMainWindow):
             self.listWidget.insertItem(row - 1, item)
             self.playlist_paths.insert(row - 1, self.playlist_paths.pop(row))
             self.listWidget.setCurrentRow(row - 1)
-            self.save_current_data()
 
     def move_down(self):
         row = self.listWidget.currentRow()
@@ -199,7 +176,6 @@ class MP3PlayerApp(QMainWindow):
             self.listWidget.insertItem(row + 1, item)
             self.playlist_paths.insert(row + 1, self.playlist_paths.pop(row))
             self.listWidget.setCurrentRow(row + 1)
-            self.save_current_data()
 
     def delete_item(self):
         row = self.listWidget.currentRow()
@@ -209,59 +185,53 @@ class MP3PlayerApp(QMainWindow):
             if self.current_index == row: 
                 self.backend.stop()
                 self.current_index = -1
-            self.save_current_data()
+
+    def open_directory_dialog(self):
+        selected_dir = QFileDialog.getExistingDirectory(
+            self, 
+            "음악 파일이 있는 폴더 선택", 
+            os.path.expanduser("~")
+        )
+        if selected_dir:
+            mp3_found = False
+            for filename in os.listdir(selected_dir):
+                if filename.lower().endswith('.mp3'):
+                    full_path = os.path.join(selected_dir, filename)
+                    self.add_mp3_to_list(full_path)
+                    mp3_found = True
+            
+            if not mp3_found:
+                QMessageBox.information(self, "안내", "선택한 폴더 안에 MP3 파일이 존재하지 않습니다.")
 
     def handle_scrollbar_dynamic(self, min_val, max_val):
         self.verticalScrollBar.setRange(min_val, max_val)
-        if max_val > 0:
-            self.verticalScrollBar.show()
-        else:
-            self.verticalScrollBar.hide()
+        self.verticalScrollBar.setVisible(max_val > 0)
 
-    def open_directory_dialog(self):
-        dir_path = QFileDialog.getExistingDirectory(self, "폴더 열기", os.path.expanduser("~"))
-        if dir_path:
-            for root, dirs, files in os.walk(dir_path):
-                for file in sorted(files):
-                    if file.lower().endswith('.mp3'):
-                        full_path = os.path.join(root, file)
-                        self.add_mp3_to_list(full_path)
-
-    # ⭐ [기능 복구] json 파일 등에서 재생목록을 복원하는 핵심 로직
     def load_saved_data(self):
-        # 1. ~/.local/share/my_player 절대 경로 설정
-        home_dir = os.path.expanduser("~")
-        config_dir = os.path.join(home_dir, ".local", "share", "my_player")
-        
-        # 설정 폴더가 없으면 에러 방지를 위해 자동 생성
-        if not os.path.exists(config_dir):
-            os.makedirs(config_dir, exist_ok=True)
-            
-        config_path = os.path.join(config_dir, "player_config.json")
-        
-        # 2. 파일 로드 및 파일 경로 절대 경로 검증
-        if os.path.exists(config_path):
-            try:
-                with open(config_path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                    saved_paths = data.get("playlist", [])
-                    for path in saved_paths:
-                        # 음악 파일 경로 내 물결표(~)도 실제 절대 경로로 확장
-                        abs_path = os.path.abspath(os.path.expanduser(path))
-                        if os.path.exists(abs_path):
-                            self.add_mp3_to_list(abs_path)
-            except Exception as e:
-                print(f"⚠️ 설정 로드 실패: {e}")
-
-    # ⭐ [기능 추가] 목록 변동 시 세이브 데이터를 갱신하는 보조 로직
-    def save_current_data(self):
-        config_path = resource_path("player_config.json")
         try:
-            with open(config_path, "w", encoding="utf-8") as f:
-                json.dump({"playlist": self.playlist_paths}, f, ensure_ascii=False, indent=4)
+            data = config.load_settings()
+            geo = data.get("window_geometry")
+            if geo and len(geo) == 4: 
+                self.setGeometry(geo[0], geo[1], geo[2], geo[3])
+            
+            playlist = data.get("playlist", [])
+            for path in playlist:
+                if os.path.exists(path): 
+                    self.add_mp3_to_list(path)
+                    
+            vol = data.get("volume", 50)
+            self.sliderVolume.setValue(vol)
+            self.backend.set_volume(vol)
+        except Exception as e:
+            print(f"⚠️ 설정 로드 실패: {e}")
+
+    def closeEvent(self, event):
+        try:
+            geom = self.geometry()
+            config.save_settings(self.playlist_paths, self.current_index, self.sliderVolume.value(), [geom.x(), geom.y(), geom.width(), geom.height()])
         except Exception as e:
             print(f"⚠️ 설정 저장 실패: {e}")
-
+        event.accept()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
