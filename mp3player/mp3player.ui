@@ -6,32 +6,33 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>885</width>
-    <height>490</height>
+    <width>782</width>
+    <height>442</height>
    </rect>
   </property>
   <property name="windowTitle">
    <string>Mp3 Player</string>
   </property>
+  <property name="styleSheet">
+   <string notr="true">QWidget {
+    background: rgb(30, 30, 30);
+}
+
+QPushButton {
+    color: rgb(255, 255, 255);
+    font-size: 12pt;
+    font-weight: bold;
+}
+QLabel{
+	color:rgb(255,255,255);
+}
+
+</string>
+  </property>
   <widget class="QWidget" name="centralwidget">
-   <layout class="QHBoxLayout" name="mainLayout">
-    <property name="spacing">
-     <number>15</number>
-    </property>
-    <property name="leftMargin">
-     <number>15</number>
-    </property>
-    <property name="topMargin">
-     <number>15</number>
-    </property>
-    <property name="rightMargin">
-     <number>15</number>
-    </property>
-    <property name="bottomMargin">
-     <number>15</number>
-    </property>
+   <layout class="QHBoxLayout" name="horizontalLayout_3">
     <item>
-     <layout class="QVBoxLayout" name="leftLayout">
+     <layout class="QVBoxLayout" name="verticalLayout">
       <item>
        <widget class="QLabel" name="lblCover">
         <property name="minimumSize">
@@ -41,7 +42,7 @@
          </size>
         </property>
         <property name="frameShape">
-         <enum>QFrame::Box</enum>
+         <enum>QFrame::Shape::Box</enum>
         </property>
         <property name="text">
          <string/>
@@ -55,7 +56,7 @@
        </widget>
       </item>
       <item>
-       <layout class="QHBoxLayout" name="controlLayout">
+       <layout class="QHBoxLayout" name="horizontalLayout">
         <item>
          <widget class="QPushButton" name="btnPrev">
           <property name="text">
@@ -73,12 +74,22 @@
         <item>
          <widget class="QPushButton" name="btnStop">
           <property name="text">
+           <string>정지</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="btnPause">
+          <property name="text">
            <string>일시정지</string>
           </property>
          </widget>
         </item>
         <item>
          <widget class="QPushButton" name="btnNext">
+          <property name="styleSheet">
+           <string notr="true"/>
+          </property>
           <property name="text">
            <string>다음</string>
           </property>
@@ -89,51 +100,77 @@
      </layout>
     </item>
     <item>
-     <layout class="QVBoxLayout" name="rightLayout">
+     <layout class="QVBoxLayout" name="verticalLayout_2">
       <item>
        <layout class="QHBoxLayout" name="listAndScrollLayout">
         <item>
          <widget class="QListWidget" name="listWidget">
+          <property name="styleSheet">
+           <string notr="true">/* QListWidget 전체 배경 및 기본 글자 색상 */
+QListWidget {
+    background-color: #121212; /* 완전 블랙 또는 어두운 회색 */
+    border: 1px solid #333333;
+    padding: 5px;
+}
+
+/* 개별 아이템의 기본 글자 색상 및 여백 */
+QListWidget::item {
+    color: #FFFFFF; /* 글자색 화이트 */
+    padding: 8px;
+    background-color: transparent;
+}
+
+/* 마우스를 올렸을 때 (Hover) */
+QListWidget::item:hover {
+    background-color: #2C2C2C; /* 약간 밝은 회색 */
+    color: #FFFFFF;
+}
+
+/* 선택(클릭)되었을 때 (Selected) */
+QListWidget::item:selected {
+    background-color: #0078D4; /* 포인트 블루 칼라 (취향에 맞게 수정 가능) */
+    color: #FFFFFF;
+}
+
+/* 선택된 상태에서 마우스를 올려도 색상 유지 */
+QListWidget::item:selected:hover {
+    background-color: #006CBE;
+}
+</string>
+          </property>
           <property name="dragDropMode">
-           <enum>QAbstractItemView::DragDrop</enum>
+           <enum>QAbstractItemView::DragDropMode::DragDrop</enum>
           </property>
           <property name="defaultDropAction">
-           <enum>Qt::MoveAction</enum>
+           <enum>Qt::DropAction::MoveAction</enum>
           </property>
           <property name="resizeMode">
-           <enum>QListView::Adjust</enum>
+           <enum>QListView::ResizeMode::Adjust</enum>
           </property>
          </widget>
         </item>
         <item>
          <widget class="QScrollBar" name="verticalScrollBar">
           <property name="orientation">
-           <enum>Qt::Vertical</enum>
+           <enum>Qt::Orientation::Vertical</enum>
           </property>
          </widget>
         </item>
        </layout>
       </item>
       <item>
-       <layout class="QHBoxLayout" name="listBtnLayout">
-        <item>
-         <widget class="QPushButton" name="btnUp">
-          <property name="text">
-           <string>위로</string>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QPushButton" name="btnDown">
-          <property name="text">
-           <string>아래로</string>
-          </property>
-         </widget>
-        </item>
+       <layout class="QHBoxLayout" name="horizontalLayout_2">
         <item>
          <widget class="QPushButton" name="btnDelete">
           <property name="text">
            <string>삭제</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="btnFullDelete">
+          <property name="text">
+           <string>전체삭제</string>
           </property>
          </widget>
         </item>
@@ -164,7 +201,7 @@
         <item>
          <widget class="QSlider" name="sliderProgress">
           <property name="orientation">
-           <enum>Qt::Horizontal</enum>
+           <enum>Qt::Orientation::Horizontal</enum>
           </property>
          </widget>
         </item>
@@ -194,51 +231,49 @@
            <number>70</number>
           </property>
           <property name="orientation">
-           <enum>Qt::Horizontal</enum>
+           <enum>Qt::Orientation::Horizontal</enum>
           </property>
          </widget>
         </item>
        </layout>
       </item>
-      <item>
-       <widget class="QWidget" name="rightWidgetContainer" native="true">
-        <layout class="QVBoxLayout" name="infoLayout">
-         <property name="leftMargin">
-          <number>0</number>
-         </property>
-         <property name="topMargin">
-          <number>5</number>
-         </property>
-         <property name="rightMargin">
-          <number>0</number>
-         </property>
-         <property name="bottomMargin">
-          <number>0</number>
-         </property>
-         <item>
-          <widget class="QLabel" name="lblTitle">
-           <property name="text">
-            <string>Title: </string>
-           </property>
-           <property name="wordWrap">
-            <bool>true</bool>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QLabel" name="lblArtist">
-           <property name="text">
-            <string>Artist: </string>
-           </property>
-           <property name="wordWrap">
-            <bool>true</bool>
-           </property>
-          </widget>
-         </item>
-        </layout>
-       </widget>
-      </item>
      </layout>
+    </item>
+    <item>
+     <widget class="QWidget" name="rightWidgetContainer" native="true">
+      <widget class="QLabel" name="lblTitle">
+       <property name="geometry">
+        <rect>
+         <x>0</x>
+         <y>5</y>
+         <width>38</width>
+         <height>18</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string>Title: </string>
+       </property>
+       <property name="wordWrap">
+        <bool>true</bool>
+       </property>
+      </widget>
+      <widget class="QLabel" name="lblArtist">
+       <property name="geometry">
+        <rect>
+         <x>0</x>
+         <y>29</y>
+         <width>45</width>
+         <height>18</height>
+        </rect>
+       </property>
+       <property name="text">
+        <string>Artist: </string>
+       </property>
+       <property name="wordWrap">
+        <bool>true</bool>
+       </property>
+      </widget>
+     </widget>
     </item>
    </layout>
   </widget>

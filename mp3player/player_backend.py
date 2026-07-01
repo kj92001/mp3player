@@ -1,28 +1,24 @@
 import os
 import sys
-import ctypes  # 💡 1. ctype에서 ctypes로 오타 수정
+import ctypes  
 from PySide6.QtCore import QObject, Signal, QTimer
 
-# 💡 2. 우분투 24.04 환경 맞춤 VLC 라이브러리 및 플러그인 경로 강제 지정
+# [VLC 라이브러리 및 플러그인 경로 강제 지정 구문]
 sys_vlc_core = '/usr/lib/x86_64-linux-gnu/libvlccore.so.9'
 sys_vlc_lib = '/usr/lib/x86_64-linux-gnu/libvlc.so.5'
 sys_vlc_plugins = '/usr/lib/x86_64-linux-gnu/vlc/plugins'
 
-# 우분투 시스템 마이너 버전에 따라 .so.9가 없을 경우 .so.8 등으로 자동 탐색 유연화
 if not os.path.exists(sys_vlc_core):
     sys_vlc_core = '/usr/lib/x86_64-linux-gnu/libvlccore.so.8'
 
 try:
     if os.path.exists(sys_vlc_core) and os.path.exists(sys_vlc_lib):
-        # ctypes를 사용하여 시스템 메모리에 VLC 핵심 엔진 바이너리를 선제 고정
         ctypes.CDLL(sys_vlc_core)
         ctypes.CDLL(sys_vlc_lib)
-        # 단일 실행 파일 내에서 오디오/비디오 코덱 플러그인을 찾을 수 있게 환경 변수 주입
         os.environ['VLC_PLUGIN_PATH'] = sys_vlc_plugins
 except Exception as e:
     print(f"⚠️ 우분투 시스템 VLC 엔진 프리로드 경고: {e}")
 
-# 💡 3. 모든 경로 바인딩 작전이 끝난 직후 vlc를 안전하게 임포트합니다.
 import vlc
 
 class PlayerBackend(QObject):
@@ -33,7 +29,6 @@ class PlayerBackend(QObject):
     def __init__(self):
         super().__init__()
         
-        # 상단에서 메모리에 띄워둔 물리 바이너리 덕분에 NoneType 에러 없이 객체가 생성됩니다.
         self.instance = vlc.Instance()
         self.player = self.instance.media_player_new()
         
@@ -64,8 +59,7 @@ class PlayerBackend(QObject):
         self.timer.stop()
         
     def set_volume(self, value):
-        # 최대 볼륨을 115로 제한합니다.
-        safe_volume = min(value, 115)
+        safe_volume = min(value, 110)
         self.player.audio_set_volume(safe_volume)
         
     def set_position(self, position):
@@ -81,6 +75,14 @@ class PlayerBackend(QObject):
             if length > 0:
                 self.duration_changed.emit(length)
 
+    # 💡 [수정] VLC 자체 스레드에서 직접 Signal을 쏘지 않도록 변경
     def _on_media_finished(self, event):
-        self.media_finished.emit()
+        # QTimer.singleShot(0, ...)을 사용해 Qt의 메인 GUI 스레드로 작업을 토스합니다.
+        # 이렇게 해야 리눅스 환경에서 프로그램이 갑자기 꺼지는(Crash) 현상을 막을 수 있습니다.
+        QTimer.singleShot(0, self._handle_media_finished_safe)
+
+    # 💡 [추가] Qt 메인 스레드에서 안전하게 실행될 콜백 함수
+    def _handle_media_finished_safe(self):
+        self.timer.stop()          # 재생이 끝났으므로 UI 갱신 타이머를 멈춥니다.
+        self.media_finished.emit() # 안전하게 종료 시그널을 발생시킵니다.
 
