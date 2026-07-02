@@ -7,9 +7,7 @@ if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
     os.chdir(sys._MEIPASS)
 
 from PySide6.QtWidgets import QMainWindow, QApplication, QListWidgetItem, QMessageBox, QFileDialog
-from PySide6.QtCore import Qt
-# from PySide6.QtUiTools import QUiLoader  #  PySide6 전용 UI 로더
-# from PySide6.QtCore import QFile  
+from PySide6.QtCore import Qt, QTimer
 import config
 from meta_extractor import get_metadata
 from player_backend import PlayerBackend
@@ -25,9 +23,13 @@ class MP3PlayerApp(QMainWindow, Ui_MainWindow):
             print(f"❌ UI 파일 로드 실패: {e}")
             sys.exit(1)
         
-        self.backend = PlayerBackend()
+        self.backend = None
         self.playlist_paths = []
         self.current_index = -1
+        self.is_transitioning = False 
+
+        # 초기 백엔드 생성 및 연결
+        self.recreate_backend()
 
         self.sliderVolume.setMaximum(115)
 
@@ -38,25 +40,18 @@ class MP3PlayerApp(QMainWindow, Ui_MainWindow):
 
         # 시그널 연결
         self.btnPlay.clicked.connect(self.play_music)
-        self.btnStop.clicked.connect(self.pause_music)    # 🛠️ 기존 정지 버튼을 일시정지 함수에 연결
+        self.btnStop.clicked.connect(self.stop_music)
+        self.btnPause.clicked.connect(self.pause_music)    
         self.btnNext.clicked.connect(self.play_next)
         self.btnPrev.clicked.connect(self.play_prev)
-        self.btnUp.clicked.connect(self.move_up)
-        self.btnDown.clicked.connect(self.move_down)
         self.btnDelete.clicked.connect(self.delete_item)
+        self.btnFullDelete.clicked.connect(self.fullDelete_item)
         
         try:
             self.btnOpenDir.clicked.connect(self.open_directory_dialog)
         except AttributeError:
             print("❌ 오류: UI 파일에 'btnOpenDir' 오브젝트 이름이 없습니다.")
 
-        self.sliderVolume.valueChanged.connect(self.backend.set_volume)
-        self.sliderProgress.sliderMoved.connect(self.backend.set_position)
-        
-        self.backend.position_changed.connect(self.update_position)
-        self.backend.duration_changed.connect(self.update_duration)
-        self.backend.media_finished.connect(self.play_next)
-        
         self.listWidget.itemDoubleClicked.connect(self.item_double_clicked)
         self.listWidget.itemActivated.connect(self.item_double_clicked)
         self.listWidget.model().rowsMoved.connect(self.sync_playlist_order)
@@ -70,26 +65,61 @@ class MP3PlayerApp(QMainWindow, Ui_MainWindow):
 
         self.load_saved_data()
 
+    def recreate_backend(self):
+        """🛠️ 기존 백엔드를 메모리에서 완전히 소멸시키고 새로 깨끗하게 생성합니다."""
+        if self.backend is not None:
+            try:
+                self.backend.position_changed.disconnect()
+                self.backend.duration_changed.disconnect()
+                self.backend.destroy()
+            except:
+                pass
+        
+        # 기존 백엔드가 물고 있던 타겟 슬라이더 메서드를 안전하게 연결 해제
+        if self.backend is not None:
+            try:
+                self.sliderVolume.valueChanged.disconnect(self.backend.set_volume)
+            except (TypeError, RuntimeError):
+                pass
+            try:
+                self.sliderProgress.sliderMoved.disconnect(self.backend.set_position)
+            except (TypeError, RuntimeError):
+                pass
+
+        self.backend = PlayerBackend()
+        self.backend.position_changed.connect(self.update_position)
+        self.backend.duration_changed.connect(self.update_duration)
+        
+        self.sliderVolume.valueChanged.connect(self.backend.set_volume)
+        self.sliderProgress.sliderMoved.connect(self.backend.set_position)
+        
+        # 현재 화면에 세팅된 볼륨값 백엔드에 즉시 주입
+        self.backend.set_volume(self.sliderVolume.value())
+
     def play_music(self):
-        """곡을 새로 재생하거나 일시정지 상태에서 이어서 재생합니다."""
         if self.playlist_paths:
             if self.current_index == -1:
                 self.current_index = 0
-                self.play_current()
-            else:
-                self.backend.play()
+            self.play_current()
 
-    # 🛠️ 기존 정지 대신 작동할 일시정지 함수
+    def stop_music(self):
+        if self.backend:
+            self.backend.stop()
+
     def pause_music(self):
-        """곡이 재생 중일 때 그 자리에 일시정지합니다."""
-        if self.backend.player.is_playing():
+        if self.backend:
             self.backend.pause()
 
     def play_current(self):
         if 0 <= self.current_index < len(self.playlist_paths):
             self.listWidget.setCurrentRow(self.current_index)
             path = self.playlist_paths[self.current_index]
+            
+            # 새 곡 재생 직전 무조건 백엔드를 새로고침하여 에러 원천 차단
+            self.recreate_backend()
+            
             self.backend.play_file(path)
+            self.is_transitioning = False  
             
             meta = get_metadata(path)
             self.lblTitle.setText(f"제목: {meta.get('title', 'Unknown')}")
@@ -98,11 +128,20 @@ class MP3PlayerApp(QMainWindow, Ui_MainWindow):
             if meta.get('cover'):
                 self.lblCover.setPixmap(meta['cover'].scaled(350, 350, Qt.AspectRatioMode.KeepAspectRatio))
             else:
-                self.lblCover.setText("No Image")
+                self.lblCover.setText("이미지 없음")
+                self.lblCover.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
     def update_position(self, pos):
         self.sliderProgress.setValue(pos)
-        self.update_time_label(pos, self.backend.player.get_length())
+        if self.backend and self.backend.player:
+            dur = self.backend.player.get_length()
+            self.update_time_label(pos, dur)
+            
+            # 남은 시간이 500ms 이하가 되면 다음 곡으로 토스
+            if dur > 0 and (dur - pos) <= 500:
+                if not self.is_transitioning:
+                    self.is_transitioning = True
+                    QTimer.singleShot(50, self.auto_play_next)
 
     def update_duration(self, dur):
         self.sliderProgress.setMaximum(dur)
@@ -112,12 +151,16 @@ class MP3PlayerApp(QMainWindow, Ui_MainWindow):
         dm, ds = divmod(dur // 1000, 60)
         self.lblTime.setText(f"{pm:02d}:{ps:02d} / {dm:02d}:{ds:02d}")
 
-    def wheelEvent(self, event):
-        delta = event.angleDelta().y()
-        current_volume = self.sliderVolume.value()
-        step = 5
-        new_volume = min(max(current_volume + (step if delta > 0 else -step), 0), 110)
-        self.sliderVolume.setValue(new_volume)
+    def eventFilter(self, obj, event):
+        from PySide6.QtCore import QEvent
+        if obj == self.sliderVolume and event.type() == QEvent.Type.Wheel:
+            delta = event.angleDelta().y()
+            current_volume = self.sliderVolume.value()
+            step = 5
+            new_volume = min(max(current_volume + (step if delta > 0 else -step), 0), 110)
+            self.sliderVolume.setValue(new_volume)
+            return True  
+        return super().eventFilter(obj, event)
 
     def add_mp3_to_list(self, path):
         path = os.path.abspath(os.path.normpath(path))
@@ -135,7 +178,7 @@ class MP3PlayerApp(QMainWindow, Ui_MainWindow):
         if event.mimeData().hasUrls():
             for url in event.mimeData().urls():
                 file_path = url.toLocalFile()
-                if file_path.lower().endswith('.mp3'):
+                if file_path.lower().endswith(('.mp3','flac')):
                     self.add_mp3_to_list(file_path)
             event.acceptProposedAction()
 
@@ -147,10 +190,17 @@ class MP3PlayerApp(QMainWindow, Ui_MainWindow):
                 new_paths.append(item.data(Qt.ItemDataRole.UserRole))
         self.playlist_paths = new_paths
 
+    def auto_play_next(self):
+        if not self.playlist_paths:
+            return
+        self.current_index = (self.current_index + 1) % len(self.playlist_paths)
+        self.play_current()
+
     def play_next(self):
-        if self.playlist_paths:
-            self.current_index = (self.current_index + 1) % len(self.playlist_paths)
-            self.play_current()
+        if not self.playlist_paths:
+            return
+        self.current_index = (self.current_index + 1) % len(self.playlist_paths)
+        self.play_current()
 
     def play_prev(self):
         if self.playlist_paths:
@@ -161,30 +211,22 @@ class MP3PlayerApp(QMainWindow, Ui_MainWindow):
         self.current_index = self.listWidget.row(item)
         self.play_current()
 
-    def move_up(self):
-        row = self.listWidget.currentRow()
-        if row > 0:
-            item = self.listWidget.takeItem(row)
-            self.listWidget.insertItem(row - 1, item)
-            self.playlist_paths.insert(row - 1, self.playlist_paths.pop(row))
-            self.listWidget.setCurrentRow(row - 1)
-
-    def move_down(self):
-        row = self.listWidget.currentRow()
-        if row < self.listWidget.count() - 1 and row != -1:
-            item = self.listWidget.takeItem(row)
-            self.listWidget.insertItem(row + 1, item)
-            self.playlist_paths.insert(row + 1, self.playlist_paths.pop(row))
-            self.listWidget.setCurrentRow(row + 1)
-
     def delete_item(self):
         row = self.listWidget.currentRow()
         if row != -1:
             self.listWidget.takeItem(row)
             self.playlist_paths.pop(row)
             if self.current_index == row: 
-                self.backend.stop()
+                if self.backend: self.backend.stop()
                 self.current_index = -1
+            elif self.current_index > row:
+                self.current_index -= 1
+
+    def fullDelete_item(self):
+        if self.backend: self.backend.stop()
+        self.current_index = -1
+        self.listWidget.clear()
+        self.playlist_paths.clear()  
 
     def open_directory_dialog(self):
         selected_dir = QFileDialog.getExistingDirectory(
@@ -195,7 +237,7 @@ class MP3PlayerApp(QMainWindow, Ui_MainWindow):
         if selected_dir:
             mp3_found = False
             for filename in os.listdir(selected_dir):
-                if filename.lower().endswith('.mp3'):
+                if filename.lower().endswith(('.mp3','flac')):
                     full_path = os.path.join(selected_dir, filename)
                     self.add_mp3_to_list(full_path)
                     mp3_found = True
@@ -221,7 +263,7 @@ class MP3PlayerApp(QMainWindow, Ui_MainWindow):
                     
             vol = data.get("volume", 50)
             self.sliderVolume.setValue(vol)
-            self.backend.set_volume(vol)
+            if self.backend: self.backend.set_volume(vol)
         except Exception as e:
             print(f"⚠️ 설정 로드 실패: {e}")
 
@@ -238,4 +280,3 @@ if __name__ == "__main__":
     player = MP3PlayerApp()
     player.show()
     sys.exit(app.exec())
-
